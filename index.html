@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบปักหมุดช่วยเหลือกลุ่มเปราะบางช่วงน้ำท่วม (โคราช)</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* Header */
+        #header {
+            background-color: #cc0000;
+            color: white;
+            text-align: center;
+            padding: 16px 20px;
+            position: relative;
+            z-index: 1000;
+        }
+
+        #header h1 {
+            font-size: 1.6rem;
+            margin-bottom: 6px;
+        }
+
+        #header h1::before {
+            content: '📍';
+            margin-right: 8px;
+        }
+
+        #header p {
+            font-size: 0.95rem;
+            opacity: 0.9;
+        }
+
+        /* Map */
+        #map {
+            height: calc(100vh - 80px);
+            width: 100%;
+            z-index: 1;
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        /* Modal */
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 30px 28px;
+            width: 90%;
+            max-width: 460px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .modal input,
+        .modal select {
+            width: 100%;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .modal input:focus,
+        .modal select:focus {
+            border-color: #cc0000;
+        }
+
+        .modal input::placeholder {
+            color: #999;
+        }
+
+        .btn-save {
+            width: 100%;
+            padding: 14px;
+            background-color: #cc0000;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-family: inherit;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background-color 0.2s;
+        }
+
+        .btn-save:hover {
+            background-color: #a30000;
+        }
+
+        .btn-cancel {
+            width: 100%;
+            padding: 14px;
+            background-color: #666;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-cancel:hover {
+            background-color: #555;
+        }
+
+        /* Pin list panel */
+        #pin-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1500;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .pin-counter {
+            background: #cc0000;
+            color: white;
+            padding: 10px 18px;
+            border-radius: 30px;
+            font-size: 0.95rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .pin-counter:hover {
+            transform: scale(1.05);
+        }
+
+        .btn-export {
+            background: #2e7d32;
+            color: white;
+            padding: 10px 18px;
+            border: none;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .btn-export:hover {
+            transform: scale(1.05);
+            background: #1b5e20;
+        }
+
+        /* Custom marker */
+        .custom-pin {
+            background: none;
+            border: none;
+        }
+
+        /* Popup style */
+        .popup-content {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            line-height: 1.6;
+        }
+
+        .popup-content strong {
+            color: #cc0000;
+        }
+
+        .popup-content .label {
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .popup-content .delete-btn {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 12px;
+            background: #cc0000;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        /* Hazard stripe decoration for header */
+        #hazard-stripe {
+            height: 8px;
+            background: repeating-linear-gradient(
+                -45deg,
+                #ffd600,
+                #ffd600 10px,
+                #111 10px,
+                #111 20px
+            );
+            position: relative;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <div id="header">
+        <h1>ระบบปักหมุดช่วยเหลือกลุ่มเปราะบางช่วงน้ำท่วม (โคราช)</h1>
+        <p>คลิกบนแผนที่เพื่อปักหมุดบ้านที่มีผู้ป่วยติดเตียงหรือกลุ่มเปราะบาง</p>
+    </div>
+    <div id="hazard-stripe"></div>
+
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <h2>กรอกข้อมูลผู้ประสบภัย</h2>
+            <input type="text" id="input-name" placeholder="ชื่อเจ้าบ้าน / ชื่อผู้ป่วย" />
+            <input type="number" id="input-residents" placeholder="จำนวนผู้อาศัยในบ้าน (คน)" min="1" />
+            <select id="input-type">
+                <option value="ผู้ป่วยติดเตียง">ผู้ป่วยติดเตียง</option>
+                <option value="ผู้สูงอายุ">ผู้สูงอายุ</option>
+                <option value="ผู้พิการ">ผู้พิการ</option>
+                <option value="เด็กเล็ก">เด็กเล็ก</option>
+                <option value="หญิงตั้งครรภ์">หญิงตั้งครรภ์</option>
+                <option value="ผู้ป่วยเรื้อรัง">ผู้ป่วยเรื้อรัง</option>
+                <option value="อื่นๆ">อื่นๆ</option>
+            </select>
+            <input type="tel" id="input-phone" placeholder="เบอร์ติดต่อฉุกเฉิน" />
+            <button class="btn-save" onclick="savePin()">บันทึกข้อมูลและปักหมุด</button>
+            <button class="btn-cancel" onclick="closeModal()">ยกเลิก</button>
+        </div>
+    </div>
+
+    <!-- Bottom-right panel -->
+    <div id="pin-panel">
+        <div class="pin-counter" id="pin-counter" title="จำนวนหมุดทั้งหมด">📌 หมุด: 0</div>
+        <button class="btn-export" onclick="exportData()">📥 ส่งออกข้อมูล (JSON)</button>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // ===== CONFIG =====
+        const KORAT_CENTER = [14.9799, 102.0978]; // นครราชสีมา
+        const DEFAULT_ZOOM = 13;
+
+        // ===== STATE =====
+        let pins = [];
+        let pendingLatLng = null;
+        let pinIdCounter = 0;
+
+        // ===== INIT MAP =====
+        const map = L.map('map').setView(KORAT_CENTER, DEFAULT_ZOOM);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri',
+            maxZoom: 19
+        }).addTo(map);
+
+        // ===== MAP CLICK =====
+        map.on('click', function (e) {
+            pendingLatLng = e.latlng;
+            openModal();
+        });
+
+        // ===== MODAL =====
+        function openModal() {
+            document.getElementById('modal-overlay').classList.add('active');
+            document.getElementById('input-name').value = '';
+            document.getElementById('input-residents').value = '';
+            document.getElementById('input-type').selectedIndex = 0;
+            document.getElementById('input-phone').value = '';
+            document.getElementById('input-name').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('modal-overlay').classList.remove('active');
+            pendingLatLng = null;
+        }
+
+        // ===== SAVE PIN =====
+        function savePin() {
+            const name = document.getElementById('input-name').value.trim();
+            const residents = document.getElementById('input-residents').value.trim();
+            const type = document.getElementById('input-type').value;
+            const phone = document.getElementById('input-phone').value.trim();
+
+            if (!name) {
+                alert('กรุณากรอกชื่อเจ้าบ้าน / ชื่อผู้ป่วย');
+                return;
+            }
+
+            if (!pendingLatLng) return;
+
+            pinIdCounter++;
+            const pinData = {
+                id: pinIdCounter,
+                name: name,
+                residents: residents || '-',
+                type: type,
+                phone: phone || '-',
+                lat: pendingLatLng.lat,
+                lng: pendingLatLng.lng,
+                timestamp: new Date().toLocaleString('th-TH'),
+            };
+
+            // Create marker
+            const redIcon = L.divIcon({
+                className: 'custom-pin',
+                html: `<svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 27 15 27s15-16.5 15-27C30 6.7 23.3 0 15 0z" fill="#cc0000" stroke="#8b0000" stroke-width="1"/>
+                    <circle cx="15" cy="14" r="7" fill="white"/>
+                    <text x="15" y="18" text-anchor="middle" fill="#cc0000" font-size="11" font-weight="bold">${pinIdCounter}</text>
+                </svg>`,
+                iconSize: [30, 42],
+                iconAnchor: [15, 42],
+                popupAnchor: [0, -42],
+            });
+
+            const marker = L.marker([pinData.lat, pinData.lng], { icon: redIcon }).addTo(map);
+
+            const popupHtml = `
+                <div class="popup-content">
+                    <strong>📍 ${pinData.name}</strong><br>
+                    <span class="label">ประเภท:</span> ${pinData.type}<br>
+                    <span class="label">จำนวนผู้อาศัย:</span> ${pinData.residents} คน<br>
+                    <span class="label">เบอร์ติดต่อ:</span> ${pinData.phone}<br>
+                    <span class="label">พิกัด:</span> ${pinData.lat.toFixed(5)}, ${pinData.lng.toFixed(5)}<br>
+                    <span class="label">เวลาบันทึก:</span> ${pinData.timestamp}<br>
+                    <button class="delete-btn" onclick="deletePin(${pinData.id})">🗑️ ลบหมุดนี้</button>
+                </div>
+            `;
+            marker.bindPopup(popupHtml);
+
+            pinData.marker = marker;
+            pins.push(pinData);
+
+            updateCounter();
+            closeModal();
+
+            // Open popup after placing
+            setTimeout(() => marker.openPopup(), 200);
+        }
+
+        // ===== DELETE PIN =====
+        function deletePin(id) {
+            const idx = pins.findIndex(p => p.id === id);
+            if (idx !== -1) {
+                map.removeLayer(pins[idx].marker);
+                pins.splice(idx, 1);
+                updateCounter();
+            }
+        }
+
+        // ===== UPDATE COUNTER =====
+        function updateCounter() {
+            document.getElementById('pin-counter').textContent = `📌 หมุด: ${pins.length}`;
+        }
+
+        // ===== EXPORT DATA =====
+        function exportData() {
+            if (pins.length === 0) {
+                alert('ยังไม่มีข้อมูลหมุดสำหรับส่งออก');
+                return;
+            }
+
+            const exportPins = pins.map(p => ({
+                id: p.id,
+                name: p.name,
+                residents: p.residents,
+                type: p.type,
+                phone: p.phone,
+                lat: p.lat,
+                lng: p.lng,
+                timestamp: p.timestamp,
+            }));
+
+            const json = JSON.stringify(exportPins, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `flood-relief-korat-${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ===== KEYBOARD SHORTCUT =====
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
